@@ -75,7 +75,7 @@ public class ROUGECalculator {
 		}
 	}
 
-	public ROUGECalculator()
+	public ROUGECalculator(Path results_file)
 	{
 		settings = new ROUGESettings();
 		SettingsUtil.loadProps(settings);
@@ -111,10 +111,10 @@ public class ROUGECalculator {
 			log.info("Loaded...POS tagger.");
 		}
 
-		if (settings.OUTPUT_TYPE.equalsIgnoreCase("file")) {
+		if (settings.OUTPUT_TYPE.equalsIgnoreCase("file") && results_file != null) {
 			try {
 
-				resultsWriter = new BufferedWriter(new FileWriter(settings.RESULTS_FILE));
+				resultsWriter = new BufferedWriter(new FileWriter(results_file.toFile()));
 				resultsWriter.write("ROUGE-Type");
 				resultsWriter.write(",");
 				resultsWriter.write("Task Name");
@@ -147,8 +147,8 @@ public class ROUGECalculator {
 
 	public void run(Path project_dir)
 	{
-		Path reference = project_dir.resolve("/reference");
-		Path system = project_dir.resolve("/system");
+		Path reference = project_dir.resolve("reference");
+		Path system = project_dir.resolve("system");
 		HashMap<String, TaskFile> hmEvalTasks = new HashMap<String, TaskFile>();
 
 		try {
@@ -175,7 +175,7 @@ public class ROUGECalculator {
 
 	public static void main(String args[])
 	{
-		ROUGECalculator rc = new ROUGECalculator();
+		ROUGECalculator rc = new ROUGECalculator(null);
 		rc.run();
 	}
 
