@@ -61,7 +61,7 @@ public class ROUGECalculator {
 		String taskName;
 		final List<Path> systemFiles = new ArrayList<>();
 		final List<Path> referenceFiles = new ArrayList<Path>();
-		final List<Result> results = new ArrayList<>();
+		final Map<Path, Result> results = new HashMap<>();
 
 		@Override
 		public boolean equals(Object obj) {
@@ -147,16 +147,17 @@ public class ROUGECalculator {
 
 	public void run(Path project_dir)
 	{
+		log.info("Starting ROUGE evaluation from project folder " + project_dir.toAbsolutePath().toString());
 		Path reference = project_dir.resolve("reference");
 		Path system = project_dir.resolve("system");
-		HashMap<String, TaskFile> hmEvalTasks = new HashMap<String, TaskFile>();
+		HashMap<String, TaskFile> hmEvalTasks = new HashMap<>();
 
 		try {
 			if (Files.exists(reference) && Files.exists(system)) {
 				List<Path> refFiles = Files.list(reference).collect(Collectors.toList());
 				List<Path> sysFiles = Files.list(system).collect(Collectors.toList());
 				initTasks(refFiles, sysFiles, hmEvalTasks);
-				evaluate(hmEvalTasks);
+				evaluate(hmEvalTasks, project_dir);
 			} else {
 				log.error("A valid 'references' and 'system' folder not found..Check rouge.properties file.");
 				log.error("\nYou need to have a valid 'references' and 'system' folder under " + project_dir
@@ -179,42 +180,39 @@ public class ROUGECalculator {
 		rc.run();
 	}
 
-	private void evaluate(HashMap<String, TaskFile> hmEvalTasks)
+	private void evaluate(HashMap<String, TaskFile> hmEvalTasks, Path project_dir) throws IOException
 	{
 		Set<String> tasks = hmEvalTasks.keySet();
 		StringBuffer b = new StringBuffer();
 		List<String> resultList=new ArrayList<>();
-		Map<String, List<Result>> results = new HashMap<>();
+		Map<String, Map<String, List<Result>>> results = new HashMap<>();
 
 		for (String task : tasks) {
 
 			TaskFile t = hmEvalTasks.get(task);
 
-			for (String ngram : settings.NGRAM) {
+			for (String ngram : settings.NGRAM)
+			{
+				for (Path system_file : t.systemFiles)
+				{
+					String system_name = system_file.getFileName().toString().split("_")[1].toUpperCase();
+					log.info("Working on task " + task + " ngram " + ngram + " system " + system_name);
 
-				log.info("Working on "+task+" ngram="+ngram);
-
-
-				for (Path system : t.systemFiles) {
-
-					// get all sentences from the system file
-					List<String> systemSents = getSystemSents(system);
-
+					// get all sentences from the system_file file
+					List<String> systemSents = getSystemSents(system_file);
 					// the result object for sys file
 					Result r = computeRouge(ngram, systemSents, t.referenceFiles);
-					String name = system.getFileName().toString().split("_")[0].toUpperCase();
-					t.results.add(r);
-					results.merge(ngram, Collections.singletonList(r), (l1, l2) -> {
-						final ArrayList<Result> new_list = new ArrayList<>();
-						new_list.addAll(l1);
-						new_list.addAll(l2);
-						return  new_list;
-					} );
 
-					final String resultStr = printSingleResult(name, t.taskName.toUpperCase(), r, ngram);
-					writeResult(name, t.taskName.toUpperCase(), ngram, r, b);
+					t.results.put(system_file, r);
+					final Map<String, List<Result>> system_results = results.computeIfAbsent(system_name, n -> new HashMap<>());
+					final List<Result> ngram_results = system_results.computeIfAbsent(ngram, n -> new ArrayList<>());
+					ngram_results.add(r);
+
+					final String resultStr = printSingleResult(system_name, ngram, t.taskName.toUpperCase(), r);
+					writeResult(system_name, t.taskName.toUpperCase(), ngram, r, b);
 					resultList.add(resultStr);
 				}
+
 				try {
 					resultsWriter.newLine();
 					resultList.add("\n");
@@ -225,40 +223,48 @@ public class ROUGECalculator {
 		}
 
 		// Calculate average values for all tasks
-		for (String ngram : results.keySet())
+		List<String> avg_results = new ArrayList<>();
+		for (String system : results.keySet())
 		{
-			Result avg = new Result();
-			avg.precision = results.get(ngram).stream()
-					.mapToDouble(r -> r.precision)
-					.average().orElse(Double.NaN);
-			avg.recall = results.get(ngram).stream()
-					.mapToDouble(r -> r.recall)
-					.average().orElse(Double.NaN);
-			avg.f = results.get(ngram).stream()
-					.mapToDouble(r -> r.f)
-					.average().orElse(Double.NaN);
-			avg.count = results.get(ngram).stream()
-					.mapToInt(r -> r.count)
-					.sum();
-			final String resultStr = printSingleResult("", "AVERAGE", avg, ngram);
-			resultList.add(resultStr);
-			writeResult("", "AVERAGE", ngram, avg, b);
+			final Map<String, List<Result>> system_results = results.get(system);
+			for (String ngram : system_results.keySet())
+			{
+				Result avg = new Result();
+				avg.precision = system_results.get(ngram).stream()
+						.mapToDouble(r -> r.precision)
+						.average().orElse(Double.NaN);
+				avg.recall = system_results.get(ngram).stream()
+						.mapToDouble(r -> r.recall)
+						.average().orElse(Double.NaN);
+				avg.f = system_results.get(ngram).stream()
+						.mapToDouble(r -> r.f)
+						.average().orElse(Double.NaN);
+				avg.count = system_results.get(ngram).stream()
+						.mapToInt(r -> r.count)
+						.sum();
+				final String resultStr = printSingleResult(system, ngram, "AVERAGE", avg);
+				avg_results.add(resultStr);
+				writeResult(system, ngram, "AVERAGE", avg, b);
+			}
+			avg_results.add("\n");
+			if (resultsWriter != null)
+				resultsWriter.newLine();
 		}
 
-		printResults(resultList);
-		cleanUp();
+		printResults(resultList, avg_results);
+		cleanUp(project_dir);
 	}
 
-	private String printSingleResult(String name, String task_name, Result r, String ngram)
+	private String printSingleResult(String system, String ngram, String task, Result r)
 	{
 		// Print results to console
 		String str = getROUGEName(settings, ngram);
-		return str + "\t" + task_name + "\t" + name
+		return str + "\t" + task + "\t" + system
 				+ "\tAverage_R:" + df.format(r.recall) + "\tAverage_P:" + df.format(r.precision)
 				+ "\tAverage_F:" + df.format(r.f) + "\tNum Reference Summaries:" + r.count;
 	}
 
-	private void writeResult(String name, String task_name, String ngram, Result r, StringBuffer b)
+	private void writeResult(String system, String ngram, String task, Result r, StringBuffer b)
 	{
 		// Write to file if specified by settings
 		if (resultsWriter != null) {
@@ -266,8 +272,8 @@ public class ROUGECalculator {
 				b.delete(0, b.length());
 				String str = getROUGEName(settings, ngram);
 				b.append(str).append(",")
-						.append(task_name).append(",")
-						.append(name).append(",").append(df.format(r.recall)).append(",")
+						.append(task).append(",")
+						.append(system).append(",").append(df.format(r.recall)).append(",")
 						.append(df.format(r.precision)).append(",").append(df.format(r.f)).append(",")
 						.append(r.count);
 
@@ -280,22 +286,18 @@ public class ROUGECalculator {
 		}
 	}
 
-	private void printResults(List<String> resultList) {
-		log.info("\n========Results Summary=======\n");
-
-		for (String res:resultList){
-			log.info(res);
-		}
-
-		log.info("======Results Summary End======\n");
+	private void printResults(List<String> resultList, List<String> avg_results) {
+		log.debug("\n========Results Summary=======\n");
+		resultList.forEach(log::debug);
+		avg_results.forEach(log::info);
+		log.debug("======Results Summary End======\n");
 	}
 
-	private void cleanUp() {
+	private void cleanUp(Path project_dir) {
 		// Close output file
 		try {
 			if (resultsWriter != null) {
-				log.info("Results written to " + settings.RESULTS_FILE);
-				log.info("\n\nDone! Find results file in: " + (new File(settings.RESULTS_FILE)).getAbsolutePath());
+				log.info("\n\nDone! Find results file in: " + project_dir.resolve(settings.RESULTS_FILE).toAbsolutePath().toString());
 				resultsWriter.close();
 			}
 		} catch (IOException e) {
@@ -374,6 +376,7 @@ public class ROUGECalculator {
 
 			if (fileNamingOK(fileToks, fileName)) {
 				TaskFile theEvalTask = getEvalTask(fileToks, hmEvalTasks);
+				Result r = new Result();
 				theEvalTask.systemFiles.add(sysFile);
 			}
 		}
