@@ -4,12 +4,14 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -33,7 +35,12 @@ import edu.stanford.nlp.tagger.maxent.MaxentTagger;
  */
 public class ROUGECalculator {
 
-	DecimalFormat df = new DecimalFormat("0.00000");
+	private final static NumberFormat df = NumberFormat.getInstance();
+	static {
+		df.setRoundingMode(RoundingMode.UP);
+		df.setMaximumFractionDigits(3);
+		df.setMinimumFractionDigits(3);
+	}
 
 	static MaxentTagger tagger;
 	static SnowballStemmer stemmer;
@@ -196,7 +203,7 @@ public class ROUGECalculator {
 				for (Path system_file : t.systemFiles)
 				{
 					String system_name = system_file.getFileName().toString().split("_")[1].toUpperCase();
-					log.info("Working on task " + task + " ngram " + ngram + " system " + system_name);
+					//log.debug("Working on task " + task + " ngram " + ngram + " system " + system_name);
 
 					// get all sentences from the system_file file
 					List<String> systemSents = getSystemSents(system_file);
@@ -224,7 +231,9 @@ public class ROUGECalculator {
 
 		// Calculate average values for all tasks
 		List<String> avg_results = new ArrayList<>();
-		for (String system : results.keySet())
+		final ArrayList<String> systems = new ArrayList<>(results.keySet());
+		systems.sort(Comparator.naturalOrder());
+		for (String system : systems)
 		{
 			final Map<String, List<Result>> system_results = results.get(system);
 			for (String ngram : system_results.keySet())
@@ -260,8 +269,10 @@ public class ROUGECalculator {
 		// Print results to console
 		String str = getROUGEName(settings, ngram);
 		return str + "\t" + task + "\t" + system
-				+ "\tAverage_R:" + df.format(r.recall) + "\tAverage_P:" + df.format(r.precision)
-				+ "\tAverage_F:" + df.format(r.f) + "\tNum Reference Summaries:" + r.count;
+				+ "\tAverage_F: " + df.format(r.f)
+				+ "\tAverage_R: " + df.format(r.recall)
+				+ "\tAverage_P: " + df.format(r.precision)
+				+ "\tNum Reference Summaries:" + r.count;
 	}
 
 	private void writeResult(String system, String ngram, String task, Result r, StringBuffer b)
@@ -288,7 +299,7 @@ public class ROUGECalculator {
 
 	private void printResults(List<String> resultList, List<String> avg_results) {
 		log.debug("\n========Results Summary=======\n");
-		resultList.forEach(log::debug);
+		//resultList.forEach(log::debug);
 		avg_results.forEach(log::info);
 		log.debug("======Results Summary End======\n");
 	}
