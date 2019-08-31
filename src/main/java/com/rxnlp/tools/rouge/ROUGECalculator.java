@@ -18,7 +18,9 @@ import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.tartarus.snowball.SnowballProgram;
 import org.tartarus.snowball.SnowballStemmer;
+import org.tartarus.snowball.ext.EnglishStemmer;
 import org.tartarus.snowball.ext.englishStemmer;
 
 import com.rxnlp.tools.rouge.ROUGESettings.RougeType;
@@ -43,7 +45,7 @@ public class ROUGECalculator {
 	}
 
 	static MaxentTagger tagger;
-	static SnowballStemmer stemmer;
+	static SnowballProgram stemmer;
 
 	private String POS_SEP = "(_|/|#)";
 	private static String SEP = "__";
@@ -97,18 +99,19 @@ public class ROUGECalculator {
 		}
 
 		if (settings.USE_STEMMER) {
-			try {
-				Class stemClass = Class.forName("org.tartarus.snowball.ext." + settings.STEMMER);
-				stemmer = (SnowballStemmer) stemClass.newInstance();
-			} catch (ClassNotFoundException e) {
-				log.error("Stemmer not found " + e.getMessage());
-				log.error("Default englishStemmer will be used");
-				stemmer = new englishStemmer();
-			} catch (InstantiationException e) {
-				log.error("Problem instantiating stemmer..." + e.getMessage());
-			} catch (IllegalAccessException e) {
-				log.error("Illegal Access " + e.getMessage());
-			}
+//			try {
+				stemmer = new EnglishStemmer();
+//				Class stemClass = Class.forName("org.tartarus.snowball.ext." + settings.STEMMER);
+//				stemmer = (SnowballProgram) stemClass.newInstance();
+//			} catch (ClassNotFoundException e) {
+//				log.error("Stemmer not found " + e.getMessage());
+//				log.error("Default englishStemmer will be used");
+//				stemmer = new englishStemmer();
+//			} catch (InstantiationException e) {
+//				log.error("Problem instantiating stemmer..." + e.getMessage());
+//			} catch (IllegalAccessException e) {
+//				log.error("Illegal Access " + e.getMessage());
+//			}
 		}
 
 		/** load POS tagger only if ROUGE topic or synonyms are true */
@@ -764,9 +767,13 @@ public class ROUGECalculator {
 			for (String t : tokens) {
 
 				String[] daToks = t.split("_");
-
-				// IF NOT STOP WORD KEEP
-				stemmer.setCurrent(daToks[0]);
+				if (daToks.length > 0)
+				{
+					// IF NOT STOP WORD KEEP
+					stemmer.setCurrent(daToks[0]);
+				}
+				else
+					stemmer.setCurrent(t);
 
 				if (stemmer.stem()) {
 					b.append(stemmer.getCurrent());
