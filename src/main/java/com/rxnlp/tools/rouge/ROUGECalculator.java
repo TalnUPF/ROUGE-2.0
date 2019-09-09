@@ -205,7 +205,7 @@ public class ROUGECalculator {
 			{
 				for (Path system_file : t.systemFiles)
 				{
-					String system_name = system_file.getFileName().toString().split("_")[1].toUpperCase();
+					String system_name = system_file.getFileName().toString().split("_")[1].toUpperCase(Locale.ENGLISH);
 					//log.debug("Working on task " + task + " ngram " + ngram + " system " + system_name);
 
 					// get all sentences from the system_file file
@@ -218,8 +218,8 @@ public class ROUGECalculator {
 					final List<Result> ngram_results = system_results.computeIfAbsent(ngram, n -> new ArrayList<>());
 					ngram_results.add(r);
 
-					final String resultStr = printSingleResult(system_name, ngram, t.taskName.toUpperCase(), r);
-					writeResult(system_name, t.taskName.toUpperCase(), ngram, r, b);
+					final String resultStr = printSingleResult(system_name, ngram, t.taskName.toUpperCase(Locale.ENGLISH), r);
+					writeResult(system_name, t.taskName.toUpperCase(Locale.ENGLISH), ngram, r, b);
 					resultList.add(resultStr);
 				}
 
@@ -370,8 +370,8 @@ public class ROUGECalculator {
 	}
 
 	private String cleanSent(String line) {
-		line = line.replaceAll("[0-9]+", " @ ").toLowerCase();
-		line = line.replaceAll("(!|\\.|\"|'|;|:|,)", " ").toLowerCase();
+		line = line.replaceAll("[0-9]+", " @ ").toLowerCase(Locale.ENGLISH);
+		line = line.replaceAll("(!|\\.|\"|'|;|:|,)", " ").toLowerCase(Locale.ENGLISH);
 
 		return line;
 	}
@@ -417,7 +417,7 @@ public class ROUGECalculator {
 	 * @return
 	 */
 	private static TaskFile getEvalTask(String[] fileToks, HashMap<String, TaskFile> hmEvalTasks) {
-		String taskName = fileToks[0].toLowerCase();
+		String taskName = fileToks[0].toLowerCase(Locale.ENGLISH);
 		TaskFile theEvalTask = hmEvalTasks.get(taskName);
 
 		if (theEvalTask == null) {
@@ -440,14 +440,14 @@ public class ROUGECalculator {
 
 		List<String> newList = new ArrayList<String>();
 		for (String sent : reference) {
-			sent = sent.toLowerCase();
+			sent = sent.toLowerCase(Locale.ENGLISH);
 			String tagged = tagger.tagString(sent);
 
 			if (restrictByTopic)
-				tagged = getRelevantPOS(tagged.toLowerCase());
+				tagged = getRelevantPOS(tagged.toLowerCase(Locale.ENGLISH));
 
 			if (tagged.trim().length() > 0)
-				newList.add(tagged.toLowerCase());
+				newList.add(tagged.toLowerCase(Locale.ENGLISH));
 		}
 
 		reference.clear();
@@ -634,7 +634,7 @@ public class ROUGECalculator {
 
 		// ROUGE-L
 		// special case, rouge L, we need to get lcs
-		if (ngram.toLowerCase().equals("l")) {
+		if (ngram.toLowerCase(Locale.ENGLISH).equals("l")) {
 
 			computeROUGEL(r, refSents, sysSents);
 		}
@@ -762,7 +762,7 @@ public class ROUGECalculator {
 
 		for (String s : sents) {
 			b.delete(0, b.length());
-			String[] tokens = s.toLowerCase().split("\\s+");
+			String[] tokens = s.toLowerCase(Locale.ENGLISH).split("\\s+");
 
 			for (String t : tokens) {
 
@@ -799,7 +799,7 @@ public class ROUGECalculator {
 
 		for (String s : sents) {
 			b.delete(0, b.length());
-			String[] tokens = s.toLowerCase().split("\\s+");
+			String[] tokens = s.toLowerCase(Locale.ENGLISH).split("\\s+");
 
 			for (String t : tokens) {
 
@@ -860,7 +860,7 @@ public class ROUGECalculator {
 				}
 
 				else // ROUGE-L
-					if (ngram.toLowerCase().equals("l")) {
+					if (ngram.toLowerCase(Locale.ENGLISH).equals("l")) {
 						// just generate unigrams for now
 						generateNgrams(1, sent, ngramList);
 					}
@@ -903,7 +903,7 @@ public class ROUGECalculator {
 		}
 
 		// if SU specified then also include unigrams
-		if (gram.toLowerCase().contains("su")) {
+		if (gram.toLowerCase(Locale.ENGLISH).contains("su")) {
 			generateNgrams(1, summary, ngramList);
 		}
 
