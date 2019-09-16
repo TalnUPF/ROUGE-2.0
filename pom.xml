@@ -1,12 +1,15 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>com.rxnlp.tools</groupId>
+
+    <groupId>com.rxnlp.tools</groupId>
 	<artifactId>rouge-calculator</artifactId>
-	<version>1.2.1</version>
+	<version>1.2.1-SNAPSHOT</version>
 	<name>ROUGE-2.0</name>
 	<packaging>jar</packaging>
+
 	<description>Evaluate text summarization systems</description>
+
 	<build>
 		<plugins>
 			<plugin>
@@ -55,17 +58,61 @@
 <!--			</resource>-->
 		</resources>
 	</build>
+
+    <distributionManagement>
+        <repository>
+            <id>maven-releases</id>
+            <name>Internal Release Repository</name>
+            <url>http://maven-taln.upf.edu/repository/maven-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>maven-snapshots</id>
+            <name>Internal Snapshot Repository</name>
+            <url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
     <repositories>
         <repository>
             <id>jitpack.io</id>
             <url>https://jitpack.io</url>
         </repository>
+
+        <repository>
+            <id>taln-repo-internal</id>
+            <name>TALN internal repo</name>
+            <url>http://maven-taln.upf.edu/repository/maven-releases/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+
+        <repository>
+            <id>taln-repo-snapshots</id>
+            <name>TALN internal repo</name>
+            <url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
     </repositories>
+
 	<dependencies>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-api</artifactId>
-            <version>2.11.0</version>
+            <version>2.12.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.12.1</version>
         </dependency>
 		<!-- https://mvnrepository.com/artifact/org.apache.lucene/lucene-snowball -->
 		<dependency>
