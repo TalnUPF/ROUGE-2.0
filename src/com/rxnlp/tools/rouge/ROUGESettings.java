@@ -14,8 +14,7 @@ public class ROUGESettings {
 
 	public boolean USE_SYNONYMS = false;
 
-	public String WORDNET_DIR;
-	
+	public String WORDNET_DIR = "";
 	
 	/** ROUGE-N */
 	List<String> NGRAM = new ArrayList<String>() {{
@@ -35,7 +34,7 @@ public class ROUGESettings {
 	/** Do stop word removal */
 	public boolean REMOVE_STOP_WORDS=false;
 	
-	public String STOP_WORDS_FILE= "stopwords-terrier-en.txt";
+	public String STOP_WORDS_FILE="stopwords-terrier-en.txt";
 
 
 	/** POS Tagger name - based on Stanford -*/

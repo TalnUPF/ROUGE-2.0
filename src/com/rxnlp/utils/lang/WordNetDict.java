@@ -1,5 +1,7 @@
 package com.rxnlp.utils.lang;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -18,23 +20,26 @@ import edu.smu.tspell.wordnet.WordNetDatabase;
 public class WordNetDict {
 	
 	
-	public WordNetDict(String path){
-		System.setProperty("wordnet.database.dir",path);
+	public WordNetDict(Path wordNetPath){
+		System.setProperty("wordnet.database.dir", wordNetPath.toAbsolutePath().toString());
 	}
 
+	
 	static WordNetDatabase database = WordNetDatabase.getFileInstance(); 
 
 	public static void main(String[] args) {
-		AdjectiveSynset nounSynset;
+		AdjectiveSynset nounSynset; 
 		AdjectiveSynset[] hyponyms; 
 		
 		
-		WordNetDict wdn=new WordNetDict("");
+		WordNetDict wdn = new WordNetDict(Paths.get(args[0]));
 		
 		wdn.getAdjectiveSynonyms("awesome");
 		wdn.getVerbSynonyms("fell");
 		
 		System.out.println(wdn.getNounSynonyms("phone"));
+
+
 	}
 	
 	/**
@@ -164,15 +169,11 @@ public class WordNetDict {
 			NounSynset synset = (NounSynset)ss;
 			String[] wordForms = synset.getWordForms();
 
-			for(String wf:wordForms){
-				//if(ss.getTagCount(wf)>3){
-					NounSynset[] hypernyms = synset.getHypernyms();
-					syns2.addAll(Arrays.asList(hypernyms));
+			NounSynset[] hypernyms = synset.getHypernyms();
+			syns2.addAll(Arrays.asList(hypernyms));
 
-					NounSynset[] hypos = synset.getHyponyms();
-					syns2.addAll(Arrays.asList(hypos));
-				//}
-			}
+			NounSynset[] hypos = synset.getHyponyms();
+			syns2.addAll(Arrays.asList(hypos));
 		}
 		syns.addAll(syns2);
 

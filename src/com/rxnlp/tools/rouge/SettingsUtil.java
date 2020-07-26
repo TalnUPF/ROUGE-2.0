@@ -8,6 +8,8 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+
+
 import com.rxnlp.tools.rouge.ROUGESettings.RougeType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -59,8 +61,8 @@ public class SettingsUtil {
 			val=properties.getProperty("synonyms.use","false");
 			rs.USE_SYNONYMS=Boolean.parseBoolean(val);
 
-			val = properties.getProperty("wordnet.dir", "");
-			rs.WORDNET_DIR = val;
+			val= properties.getProperty("wordnet.dir", "");
+			rs.WORDNET_DIR=val;
 			
 			val=properties.getProperty("rouge.type","normal");
 			rs.ROUGE_TYPE=RougeType.valueOf(val);

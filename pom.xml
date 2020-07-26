@@ -1,16 +1,63 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-
-    <groupId>com.rxnlp.tools</groupId>
+	<groupId>com.rxnlp.tools</groupId>
 	<artifactId>rouge-calculator</artifactId>
-	<version>1.2.1-SNAPSHOT</version>
+	<version>1.2.1</version>
 	<name>ROUGE-2.0</name>
 	<packaging>jar</packaging>
-
 	<description>Evaluate text summarization systems</description>
 
+	<distributionManagement>
+		<repository>
+			<id>maven-releases</id>
+			<name>Internal Release Repository</name>
+			<url>http://maven-taln.upf.edu/repository/maven-releases/</url>
+		</repository>
+		<snapshotRepository>
+			<id>maven-snapshots</id>
+			<name>Internal Snapshot Repository</name>
+			<url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
+		</snapshotRepository>
+	</distributionManagement>
+
+	<repositories>
+		<repository>
+			<id>jitpack.io</id>
+			<name>jitpack</name>
+			<url>https://jitpack.io</url>
+		</repository>
+		<repository>
+			<id>clojars.org</id>
+			<name>clojars</name>
+			<url>https://clojars.org/repo/</url>
+		</repository>
+		<repository>
+			<id>taln-repo-internal</id>
+			<name>TALN internal repo</name>
+			<url>http://maven-taln.upf.edu/repository/maven-releases/</url>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+		<repository>
+			<id>taln-repo-snapshots</id>
+			<name>TALN internal repo</name>
+			<url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
+
 	<build>
+		<sourceDirectory>src</sourceDirectory>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -40,7 +87,20 @@
 					</execution>
 				</executions>
 			</plugin>
-		</plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<version>3.0.1</version>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+        </plugins>
 		<resources>
 			<resource>
 				<directory>resources</directory>
@@ -50,105 +110,47 @@
 					<include>stopwords-terrier-en.txt</include>
 				</includes>
 			</resource>
-<!--			<resource>-->
-<!--				<directory>src/test/resources/projects</directory>-->
-<!--				<includes>-->
-<!--					<include>*</include>-->
-<!--				</includes>-->
-<!--			</resource>-->
+			<resource>
+				<directory>projects</directory>
+				<includes>
+					<include>*</include>
+				</includes>
+			</resource>
 		</resources>
 	</build>
-
-    <distributionManagement>
-        <repository>
-            <id>maven-releases</id>
-            <name>Internal Release Repository</name>
-            <url>http://maven-taln.upf.edu/repository/maven-releases/</url>
-        </repository>
-        <snapshotRepository>
-            <id>maven-snapshots</id>
-            <name>Internal Snapshot Repository</name>
-            <url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
-        </snapshotRepository>
-    </distributionManagement>
-
-    <repositories>
-        <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
-
-        <repository>
-            <id>taln-repo-internal</id>
-            <name>TALN internal repo</name>
-            <url>http://maven-taln.upf.edu/repository/maven-releases/</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-
-        <repository>
-            <id>taln-repo-snapshots</id>
-            <name>TALN internal repo</name>
-            <url>http://maven-taln.upf.edu/repository/maven-snapshots/</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
-
 	<dependencies>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-api</artifactId>
-            <version>2.12.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>2.12.1</version>
-        </dependency>
-		<!-- https://mvnrepository.com/artifact/org.apache.lucene/lucene-snowball -->
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-api</artifactId>
+			<version>2.12.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-core</artifactId>
+			<version>2.12.1</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-snowball</artifactId>
-			<version>3.0.3</version>
+			<artifactId>lucene-analyzers-common</artifactId>
+			<version>7.2.0</version>
 		</dependency>
-		<!-- https://mvnrepository.com/artifact/com.github.rholder/snowball-stemmer -->
 		<dependency>
-			<groupId>com.github.rholder</groupId>
-			<artifactId>snowball-stemmer</artifactId>
-			<version>1.3.0.581.1</version>
+			<groupId>com.github.jaytaylor</groupId>
+			<artifactId>jaws</artifactId>
+			<version>1.3.1</version>
+		</dependency>
+		<dependency>
+			<groupId>edu.stanford.nlp</groupId>
+			<artifactId>stanford-pos-tagger</artifactId>
+			<version>3.3.1</version>
 		</dependency>
         <dependency>
-            <groupId>edu.stanford.nlp</groupId>
-            <artifactId>stanford-corenlp</artifactId>
-            <version>3.9.1</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>joda-time</artifactId>
-                    <groupId>joda-time</groupId>
-                </exclusion>
-                <exclusion>
-                    <artifactId>lucene-core</artifactId>
-                    <groupId>org.apache.lucene</groupId>
-                </exclusion>
-                <exclusion>
-                    <artifactId>xml-apis</artifactId>
-                    <groupId>xml-apis</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>com.github.jaytaylor</groupId>
-            <artifactId>jaws</artifactId>
-            <version>1.3.1</version>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.9</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>

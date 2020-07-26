@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.stream.Stream;
 
 
@@ -31,7 +30,7 @@ public class StopWordsHandler {
 
 		try (Stream<String> stream = Files.lines(Paths.get(stopFile),StandardCharsets.ISO_8859_1)) {
 			stream.forEach(line -> {
-				String stopWord = line.trim().toLowerCase(Locale.ENGLISH);
+				String stopWord = line.trim().toLowerCase();
 				mStopWords.add(stopWord);
 			});
 

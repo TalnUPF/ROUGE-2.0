@@ -1,80 +1,102 @@
 package com.rxnlp.tools.rouge;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.math.RoundingMode;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.tartarus.snowball.SnowballProgram;
-import org.tartarus.snowball.SnowballStemmer;
-import org.tartarus.snowball.ext.EnglishStemmer;
-import org.tartarus.snowball.ext.englishStemmer;
+import edu.stanford.nlp.tagger.maxent.MaxentTagger;
+
 
 import com.rxnlp.tools.rouge.ROUGESettings.RougeType;
 import com.rxnlp.utils.lang.StopWordsHandler;
 import com.rxnlp.utils.lang.WordNetDict;
 
-import edu.stanford.nlp.tagger.maxent.MaxentTagger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.tartarus.snowball.SnowballProgram;
+import org.tartarus.snowball.ext.EnglishStemmer;
 
 /**
- *
+ * 
  * @author Kavita Ganesan
  * www.rxnlp.com
  *
  */
 public class ROUGECalculator {
 
-	private final static NumberFormat df = NumberFormat.getInstance();
-	static {
-		df.setRoundingMode(RoundingMode.UP);
-		df.setMaximumFractionDigits(3);
-		df.setMinimumFractionDigits(3);
-	}
+	DecimalFormat df = new DecimalFormat("0.00000");
 
+	private final static Logger log = LogManager.getLogger();
 	static MaxentTagger tagger;
 	static SnowballProgram stemmer;
 
-	private String POS_SEP = "(_|/|#)";
+	private String POS_SEP = "_";
 	private static String SEP = "__";
 
-	private final ROUGESettings settings;
-	private final WordNetDict wrdnet;
+	WordNetDict wrdnet;
 	private StopWordsHandler stopHandler;
-	private BufferedWriter resultsWriter;
-	private final static Logger log = LogManager.getLogger();
+	private ROUGESettings settings;
 
+	public static class Result {
 
-	public static class Result
-	{
-		double precision = 0.0;
-		double recall = 0.0;
-		double f = 0.0;
+		double precision = 0;
+		double recall = 0;
+		double f = 0;
 		int count = 0;
-//		String name;R
+		String name;
+		
+		public void resetROUGE(){
+			precision=0;
+			recall=0;
+			count=0;
+			f=0;
+		}
+
+		Result() {};
+
+		Result(Result r)
+		{
+			this.precision = r.precision;
+			this.recall = r.recall;
+			this.f = r.f;
+			this.count = r.count;
+			this.name = r.name;
+		}
 	}
 
-	public static class TaskFile {
+	private static class DecoratedResult
+	{
+		final String task;
+		final String system;
+		final String metric;
+		final Result result;
+
+		DecoratedResult(String task, String system, String metric, Result result)
+		{
+			this.task = task;
+			this.system = String.join("\t", system.toUpperCase().split("-"));
+			this.metric = metric;
+			this.result = new Result(result);
+		}
+	}
+
+	public static class Task {
 		String taskName;
-		final List<Path> systemFiles = new ArrayList<>();
-		final List<Path> referenceFiles = new ArrayList<Path>();
-		final Map<Path, Result> results = new HashMap<>();
+		final Map<String, String> system = new HashMap<>();
+		final Map<String, Result> results = new HashMap<>();
+		final Map<String, String> reference = new HashMap<>();
 
 		@Override
 		public boolean equals(Object obj) {
-			TaskFile tf1 = (TaskFile) obj;
+			Task tf1 = (Task) obj;
 			return tf1.taskName.equals(taskName);
 		}
 
@@ -84,99 +106,72 @@ public class ROUGECalculator {
 		}
 	}
 
-	public ROUGECalculator(Path results_file)
+	public ROUGECalculator()
 	{
 		settings = new ROUGESettings();
 		SettingsUtil.loadProps(settings);
-
-		if (settings.USE_SYNONYMS)
-			this.wrdnet = new WordNetDict(settings.WORDNET_DIR);
-		else
-			this.wrdnet = null;
 
 		if (settings.REMOVE_STOP_WORDS) {
 			stopHandler = new StopWordsHandler(settings.STOP_WORDS_FILE);
 		}
 
 		if (settings.USE_STEMMER) {
-//			try {
+			try {
+				Class stemClass = Class.forName("org.tartarus.snowball.ext." + settings.STEMMER);
+				stemmer = (SnowballProgram) stemClass.newInstance();
+			} catch (ClassNotFoundException e) {
+				log.error("Stemmer not found " + e.getMessage());
+				log.error("Default englishStemmer will be used");
 				stemmer = new EnglishStemmer();
-//				Class stemClass = Class.forName("org.tartarus.snowball.ext." + settings.STEMMER);
-//				stemmer = (SnowballProgram) stemClass.newInstance();
-//			} catch (ClassNotFoundException e) {
-//				log.error("Stemmer not found " + e.getMessage());
-//				log.error("Default englishStemmer will be used");
-//				stemmer = new englishStemmer();
-//			} catch (InstantiationException e) {
-//				log.error("Problem instantiating stemmer..." + e.getMessage());
-//			} catch (IllegalAccessException e) {
-//				log.error("Illegal Access " + e.getMessage());
-//			}
+			} catch (InstantiationException e) {
+				log.error("Problem instantiating stemmer..." + e.getMessage());
+			} catch (IllegalAccessException e) {
+				log.error("Illegal Access " + e.getMessage());
+			}
 		}
 
 		/** load POS tagger only if ROUGE topic or synonyms are true */
 		if (settings.ROUGE_TYPE.equals(RougeType.topic) || settings.ROUGE_TYPE.equals(RougeType.topicUniq)
 				|| settings.USE_SYNONYMS) {
-			tagger = new MaxentTagger("resources/taggers/" + settings.TAGGER_NAME);
+			tagger = new MaxentTagger(settings.TAGGER_NAME);
 			log.info("Loaded...POS tagger.");
 		}
 
-		if (settings.OUTPUT_TYPE.equalsIgnoreCase("file") && results_file != null) {
-			try {
-
-				resultsWriter = new BufferedWriter(new FileWriter(results_file.toFile()));
-				resultsWriter.write("ROUGE-Type");
-				resultsWriter.write(",");
-				resultsWriter.write("Task Name");
-				resultsWriter.write(",");
-				resultsWriter.write("System Name");
-				resultsWriter.write(",");
-				resultsWriter.write("Avg_Recall");
-				resultsWriter.write(",");
-				resultsWriter.write("Avg_Precision");
-				resultsWriter.write(",");
-				resultsWriter.write("Avg_F-Score");
-				resultsWriter.write(",");
-				resultsWriter.write("Num Reference Summaries");
-				resultsWriter.newLine();
-
-			} catch (IOException e) {
-				log.error("There was a problem creating or writing to the results file. Make sure the file is not in use");
-				log.error(e.getMessage());
-				System.exit(-1);
-			}
+		if (settings.USE_SYNONYMS)
+		{
+			this.wrdnet = new WordNetDict(Paths.get(settings.WORDNET_DIR));
 		}
-		else
-			resultsWriter = null;
+	}
+	
+	public static void main(String args[]) throws IOException {
+		ROUGECalculator rc = new ROUGECalculator();
+		PrintWriter resultsWriter = new PrintWriter(new FileWriter(new File(args[0])));
+
+		rc.run(Paths.get(args[1]), p -> true, resultsWriter);
 	}
 
-	public void run()
-	{
-		run(Paths.get(settings.PROJ_DIR));
-	}
+	// run from folder path
+	public void run(Path projectDir, Predicate<Path> filter, PrintWriter out) {
+		String references = projectDir + "/reference";
+		String system = projectDir + "/system";
 
-	public void run(Path project_dir)
-	{
-		log.info("Starting ROUGE evaluation from project folder " + project_dir.toAbsolutePath().toString());
-		Path reference = project_dir.resolve("reference");
-		Path system = project_dir.resolve("system");
-		HashMap<String, TaskFile> hmEvalTasks = new HashMap<>();
+		Path refPath = Paths.get(references);
+		Path sysPath = Paths.get(system);
 
 		try {
-			if (Files.exists(reference) && Files.exists(system)) {
-				List<Path> refFiles = Files.list(reference).collect(Collectors.toList());
-				List<Path> sysFiles = Files.list(system).collect(Collectors.toList());
-				initTasks(refFiles, sysFiles, hmEvalTasks);
-				evaluate(hmEvalTasks, project_dir);
+			if (Files.exists(refPath) && Files.exists(sysPath)) {
+				List<Path> refFiles = Files.list(refPath).filter(filter).collect(Collectors.toList());
+				List<Path> sysFiles = Files.list(sysPath).filter(filter).collect(Collectors.toList());
+				run(refFiles, sysFiles, out);
 			} else {
 				log.error("A valid 'references' and 'system' folder not found..Check rouge.properties file.");
-				log.error("\nYou need to have a valid 'references' and 'system' folder under " + project_dir
+				log.error("\nYou need to have a valid 'references' and 'system' folder under " + projectDir
 						+ ". Please check your rouge.properties file");
 				System.exit(-1);
 			}
 		} catch (Exception e) {
 			log.error(e.getMessage());
-			log.error("\nYou need to have a valid 'references' and 'system' folder under " + project_dir
+			log.error("\nYou need to have a valid 'references' and 'system' folder under " + projectDir
 					+ ". Please check your rouge.properties file");
 			log.error(e.getMessage());
 			e.printStackTrace();
@@ -184,140 +179,81 @@ public class ROUGECalculator {
 		}
 	}
 
-	public static void main(String args[])
-	{
-		ROUGECalculator rc = new ROUGECalculator(null);
-		rc.run();
+	public void run(List<Path> refFiles, List<Path> sysFiles, PrintWriter out) throws IOException {
+		List<Task> hmEvalTasks = initTasks(refFiles, sysFiles);
+		evaluate(hmEvalTasks, out);
 	}
 
-	private void evaluate(HashMap<String, TaskFile> hmEvalTasks, Path project_dir) throws IOException
-	{
-		Set<String> tasks = hmEvalTasks.keySet();
-		StringBuffer b = new StringBuffer();
-		List<String> resultList=new ArrayList<>();
-		Map<String, Map<String, List<Result>>> results = new HashMap<>();
+	private void evaluate(List<Task> tasks, PrintWriter out) throws IOException {
+		List<DecoratedResult> results = new ArrayList<>();
 
-		for (String task : tasks) {
+		for (Task task : tasks) {
+			for (String ngram : settings.NGRAM) {
+				for (String system_name : task.system.keySet()) {
 
-			TaskFile t = hmEvalTasks.get(task);
+					// get all sentences from the system_name file
+					List<String> systemSents = getSentences(task.system.get(system_name));
+					List<List<String>> reference_sents = task.reference.entrySet().stream()
+							.map(e -> {
+								List<String> ref_sents = getSentences(e.getValue());
+								if (ref_sents.isEmpty())
+									log.warn("No reference sentences");
+								return ref_sents;
+							})
+							.collect(Collectors.toList());
 
-			for (String ngram : settings.NGRAM)
-			{
-				for (Path system_file : t.systemFiles)
-				{
-					String system_name = system_file.getFileName().toString().split("_")[1].toUpperCase(Locale.ENGLISH);
-					//log.debug("Working on task " + task + " ngram " + ngram + " system " + system_name);
-
-					// get all sentences from the system_file file
-					List<String> systemSents = getSystemSents(system_file);
 					// the result object for sys file
-					Result r = computeRouge(ngram, systemSents, t.referenceFiles);
+					Result r = task.results.get(system_name);
+					computeRouge(r, ngram, systemSents, reference_sents);
+					String str = getROUGEName(settings, ngram);
 
-					t.results.put(system_file, r);
-					final Map<String, List<Result>> system_results = results.computeIfAbsent(system_name, n -> new HashMap<>());
-					final List<Result> ngram_results = system_results.computeIfAbsent(ngram, n -> new ArrayList<>());
-					ngram_results.add(r);
-
-					final String resultStr = printSingleResult(system_name, ngram, t.taskName.toUpperCase(Locale.ENGLISH), r);
-					writeResult(system_name, t.taskName.toUpperCase(Locale.ENGLISH), ngram, r, b);
-					resultList.add(resultStr);
-				}
-
-				try {
-					resultsWriter.newLine();
-					resultList.add("\n");
-				} catch (IOException e) {
-					log.error(e.getMessage());
+					// Print results to console
+					results.add(new DecoratedResult(task.taskName, r.name.toUpperCase(), str, r));
 				}
 			}//end of task
 		}
 
-		// Calculate average values for all tasks
-		List<String> avg_results = new ArrayList<>();
-		final ArrayList<String> systems = new ArrayList<>(results.keySet());
-		systems.sort(Comparator.naturalOrder());
-		for (String system : systems)
-		{
-			final Map<String, List<Result>> system_results = results.get(system);
-			for (String ngram : system_results.keySet())
-			{
-				Result avg = new Result();
-				avg.precision = system_results.get(ngram).stream()
-						.mapToDouble(r -> r.precision)
-						.average().orElse(Double.NaN);
-				avg.recall = system_results.get(ngram).stream()
-						.mapToDouble(r -> r.recall)
-						.average().orElse(Double.NaN);
-				avg.f = system_results.get(ngram).stream()
-						.mapToDouble(r -> r.f)
-						.average().orElse(Double.NaN);
-				avg.count = system_results.get(ngram).stream()
-						.mapToInt(r -> r.count)
-						.sum();
-				final String resultStr = printSingleResult(system, ngram, "AVERAGE", avg);
-				avg_results.add(resultStr);
-				writeResult(system, ngram, "AVERAGE", avg, b);
-			}
-			avg_results.add("\n");
-			if (resultsWriter != null)
-				resultsWriter.newLine();
-		}
+		NumberFormat format = NumberFormat.getInstance();
+		format.setRoundingMode(RoundingMode.HALF_UP);
+		format.setMaximumFractionDigits(2);
 
-		printResults(resultList, avg_results);
-		cleanUp(project_dir);
-	}
+		Map<String, List<DecoratedResult>> results_by_system = results.stream()
+				.collect(Collectors.groupingBy(r -> r.system + "\t" + r.metric));
+		String avg_results = "\nROUGE eval:\nSummary type\tSystem\tROUGE type\tRecall\tPrecision\tF-Score" +
+				results_by_system.entrySet().stream()
+				.sorted(Map.Entry.comparingByKey())
+				.map(e -> {
+					List<DecoratedResult> result_set = e.getValue();
+					final double avg_precision = result_set.stream()
+							.mapToDouble(r -> r.result.precision)
+							.average()
+							.orElse(0.0);
+					final double avg_recall = result_set.stream()
+							.mapToDouble(r -> r.result.recall)
+							.average()
+							.orElse(0.0);
+					final double avg_fscore = result_set.stream()
+							.mapToDouble(r -> r.result.f)
+							.average()
+							.orElse(0.0);
+//					final int tota_ref_summs = result_set.stream()
+//							.mapToInt(r -> r.result.count)
+//							.sum();
+					return e.getKey()
+							+ "\t" + format.format(avg_recall) + "\t" + format.format(avg_precision)
+							+ "\t" + format.format(avg_fscore); // + "\t" + tota_ref_summs;
+				})
+				.collect(Collectors.joining("\n", "\n", "\n"));
 
-	private String printSingleResult(String system, String ngram, String task, Result r)
-	{
-		// Print results to console
-		String str = getROUGEName(settings, ngram);
-		return str + "\t" + task + "\t" + system
-				+ "\tAverage_F: " + df.format(r.f)
-				+ "\tAverage_R: " + df.format(r.recall)
-				+ "\tAverage_P: " + df.format(r.precision)
-				+ "\tNum Reference Summaries:" + r.count;
-	}
+		out.write(avg_results);
 
-	private void writeResult(String system, String ngram, String task, Result r, StringBuffer b)
-	{
-		// Write to file if specified by settings
-		if (resultsWriter != null) {
-			try {
-				b.delete(0, b.length());
-				String str = getROUGEName(settings, ngram);
-				b.append(str).append(",")
-						.append(task).append(",")
-						.append(system).append(",").append(df.format(r.recall)).append(",")
-						.append(df.format(r.precision)).append(",").append(df.format(r.f)).append(",")
-						.append(r.count);
+		String detailed_results = "\n\n\n" + results.stream()
+				.map(r -> r.task + "\t" + r.system + "\t" + r.metric + "\t" + format.format(r.result.recall) + "\t" +
+						format.format(r.result.precision) + "\t" + format.format(r.result.f))
+				.collect(Collectors.joining("\n"));
+		out.write(detailed_results);
 
-				resultsWriter.write(b.toString());
-				resultsWriter.newLine();
-
-			} catch (IOException e) {
-				log.error(e.getMessage());
-			}
-		}
-	}
-
-	private void printResults(List<String> resultList, List<String> avg_results) {
-		log.debug("\n========Results Summary=======\n");
-		//resultList.forEach(log::debug);
-		avg_results.forEach(log::info);
-		log.debug("======Results Summary End======\n");
-	}
-
-	private void cleanUp(Path project_dir) {
-		// Close output file
-		try {
-			if (resultsWriter != null) {
-				log.info("\n\nDone! Find results file in: " + project_dir.resolve(settings.RESULTS_FILE).toAbsolutePath().toString());
-				resultsWriter.close();
-			}
-		} catch (IOException e) {
-			log.error(e.getMessage());
-		}
-
+		out.close();
 	}
 
 	private String getROUGEName(ROUGESettings settings, String ngram) {
@@ -341,91 +277,97 @@ public class ROUGECalculator {
 		return sb.toString();
 	}
 
-	private List<String> getSystemSents(Path system) {
-		/*
-		 * try { BufferedReader r=new BufferedReader(new FileReader(system));
-		 * List<String> sentList=new ArrayList<>(); String line="";
-		 *
-		 * while((line=r.readLine())!=null){ line=cleanSent(line);
-		 * sentList.add(line); }
-		 */
+	private List<String> getSentences(String system) {
 
 		// read file into stream, try-with-resources
 		List<String> sentList = new ArrayList<>();
-		try (Stream<String> stream = Files.lines(system, StandardCharsets.ISO_8859_1)) {
+		String[] lines = system.split("\\r?\\n");
 
-			stream.forEach(line -> {
-				line = cleanSent(line);
-				sentList.add(line);
-			});
-
-		} catch (IOException e) {
-			log.error("Problem reading system sentences");
-		}
+		Arrays.stream(lines).forEach(line -> {
+			line = cleanSent(line);
+			sentList.add(line);
+		});
 
 		return sentList;
-		/*
-		 * } catch (IOException e) { e.printStackTrace(); return null; }
-		 */
 	}
 
 	private String cleanSent(String line) {
-		line = line.replaceAll("[0-9]+", " @ ").toLowerCase(Locale.ENGLISH);
-		line = line.replaceAll("(!|\\.|\"|'|;|:|,)", " ").toLowerCase(Locale.ENGLISH);
+		line = line.replaceAll("[0-9]+", " @ ").toLowerCase();
+		line = line.replaceAll("(!|\\.|\"|'|;|:|,)", " ").toLowerCase();
 
 		return line;
 	}
 
-	private void computeRouge(String system, List<String> referenceFiles) {
-
-	}
-
-	private static void initTasks(List<Path> refFiles, List<Path> sysFiles, HashMap<String, TaskFile> hmEvalTasks) {
+	private static List<Task> initTasks(List<Path> refFiles, List<Path> sysFiles)
+	{
+		List<Task> tasks = new ArrayList<>();
 
 		// INITIALIZE SYSTEM FILES FOR EACH TASK
-		for (Path sysFile : sysFiles) {
+		for (Path sysFile : sysFiles)
+		{
+			try {
+				final String fileName = sysFile.getFileName().toFile().getName();
+				final String[] fileToks = fileName.split("_");
+				final String system_name = fileToks[1];
+				String summary = new String(Files.readAllBytes(sysFile));
+				if (fileNamingOK(fileToks, fileName)) {
+					Task task = getEvalTask(fileToks, tasks);
 
-			String fileName = sysFile.getFileName().toFile().getName();
-			String[] fileToks = fileName.split("_");
-
-			if (fileNamingOK(fileToks, fileName)) {
-				TaskFile theEvalTask = getEvalTask(fileToks, hmEvalTasks);
-				Result r = new Result();
-				theEvalTask.systemFiles.add(sysFile);
+					Result r = new Result();
+					r.name = system_name;
+					task.system.put(system_name, summary);
+					task.results.put(system_name, r);
+				}
+			} catch (Exception e) {
+				log.error("Failed to read " + sysFile + ": " + e);
 			}
 		}
 
 		// INITIALIZE REFERENCE FILES FOR EACH TASK
-		for (Path refFile : refFiles) {
+		for (Path refFile : refFiles)
+		{
+			try
+			{
+				final String fileName = refFile.getFileName().toFile().getName();
+				final String[] fileToks = fileName.split("_");
+				final String ref_name = fileToks[1];
+				final String summary = new String(Files.readAllBytes(refFile));
 
-			String fileName = refFile.getFileName().toFile().getName();
-			String[] fileToks = fileName.split("_");
-
-			if (fileNamingOK(fileToks, fileName)) {
-				TaskFile theEvalTask = getEvalTask(fileToks, hmEvalTasks);
-				theEvalTask.referenceFiles.add(refFile);
+				if (fileNamingOK(fileToks, fileName))
+				{
+					Task task = getEvalTask(fileToks, tasks);
+					task.reference.put(ref_name, summary);
+				}
+			}
+			catch (IOException e) {
+				e.printStackTrace();
 			}
 		}
+
+		return tasks;
 	}
 
 	/**
 	 * Each unique text, is considered a unique summarization task. Create a
-	 * summarization task and add evaluation tasks into hmEvalTasks
-	 *
+	 * summarization task and add evaluation tasks into tasks
+	 * 
 	 * @param fileToks
-	 * @param hmEvalTasks
+	 * @param tasks
 	 * @return
 	 */
-	private static TaskFile getEvalTask(String[] fileToks, HashMap<String, TaskFile> hmEvalTasks) {
-		String taskName = fileToks[0].toLowerCase(Locale.ENGLISH);
-		TaskFile theEvalTask = hmEvalTasks.get(taskName);
-
-		if (theEvalTask == null) {
-			theEvalTask = new TaskFile();
-			theEvalTask.taskName = taskName;
-			hmEvalTasks.put(taskName, theEvalTask);
-		}
-		return theEvalTask;
+	private static Task getEvalTask(String[] fileToks, List<Task> tasks) {
+		String taskName = fileToks[0].toLowerCase();
+		Task task = tasks.stream()
+				.filter(t -> t.taskName.equalsIgnoreCase(taskName))
+				.findFirst()
+				.orElseGet(() -> {
+					Task t = new Task();
+					t.taskName = taskName;
+					return t;
+				});
+		if (!tasks.contains(task))
+			tasks.add(task);
+		return task;
 	}
 
 	private static boolean fileNamingOK(String[] fileToks, String fileName) {
@@ -440,14 +382,14 @@ public class ROUGECalculator {
 
 		List<String> newList = new ArrayList<String>();
 		for (String sent : reference) {
-			sent = sent.toLowerCase(Locale.ENGLISH);
+			sent = sent.toLowerCase();
 			String tagged = tagger.tagString(sent);
 
 			if (restrictByTopic)
-				tagged = getRelevantPOS(tagged.toLowerCase(Locale.ENGLISH));
+				tagged = getRelevantPOS(tagged.toLowerCase());
 
 			if (tagged.trim().length() > 0)
-				newList.add(tagged.toLowerCase(Locale.ENGLISH));
+				newList.add(tagged.toLowerCase());
 		}
 
 		reference.clear();
@@ -456,7 +398,7 @@ public class ROUGECalculator {
 
 	/**
 	 * Pick out words that have the relevant POS tags if ROUGE-Topic selected
-	 *
+	 * 
 	 * @param tagged
 	 * @return
 	 */
@@ -501,19 +443,16 @@ public class ROUGECalculator {
 		}
 	}
 
-	public Result computeRouge(String ngram, List<String> sysSents, List<Path> refSentFileNames)
-	{
-		Result r = new Result();
-		List<String> refSents = null;
+	public void computeRouge(Result r, String ngram, List<String> sysSents, List<List<String>> refsSents) {
+
+		r.resetROUGE();
 
 		// For each reference summary
-		for (Path refSentFile : refSentFileNames) {
+		for (List<String> refSents : refsSents) {
 
-			refSents = getSystemSents(refSentFile);
+			if (refSents == null || refSents.isEmpty()) {
 
-			if (refSents == null) {
-
-				log.warn("No reference sentences in " + refSentFile);
+				log.warn("No reference sentences");
 
 			} else {
 
@@ -544,6 +483,9 @@ public class ROUGECalculator {
 
 				double overlap = 0;
 				double ROUGE = 0;
+
+				refSents.removeIf(String::isEmpty);
+				sysSents.removeIf(String::isEmpty);
 
 				Collection<String> hsrefOriginal = getNGramTokens(ngram,refSents);
 				Collection<String> refSummaryTokens = getNGramTokens(ngram,refSents);
@@ -606,16 +548,18 @@ public class ROUGECalculator {
 				}
 				r.count=r.count+1;
 				computePrecisionRecall(r,ngram, overlap, hsrefOriginal, sysSummaryTokens, refSents, sysSents);
+				
+				
+
 			} // SENTS FOUND
 		}
-
+		
 		finalizePrecisionRecall(r);
-		return r;
 	}
 
 	/**
 	 * Average the precision and recall and compute f-score
-	 *
+	 * 
 	 * @param r
 	 */
 	private void finalizePrecisionRecall(Result r) {
@@ -630,30 +574,31 @@ public class ROUGECalculator {
 	}
 
 	private void computePrecisionRecall(Result r, String ngram, double overlap, Collection<String> hsrefOriginal,
-	                                    Collection<String> sysSummaryTokens, List<String> refSents, List<String> sysSents) {
+			Collection<String> sysSummaryTokens, List<String> refSents, List<String> sysSents) {
 
 		// ROUGE-L
 		// special case, rouge L, we need to get lcs
-		if (ngram.toLowerCase(Locale.ENGLISH).equals("l")) {
+		if (ngram.toLowerCase().equals("l")) {
 
 			computeROUGEL(r, refSents, sysSents);
 		}
 
 		else
-			// EVERYTHING ELSE
-			if (overlap > 0) {
-				double rougeRecall = overlap / (hsrefOriginal.size());
-				double rougePrecision = (overlap) / (sysSummaryTokens.size());
-				r.recall = r.recall + rougeRecall;
-				r.precision = r.precision + rougePrecision;
-			}
+		// EVERYTHING ELSE
+		if (overlap > 0) {
+			double rougeRecall = overlap / (hsrefOriginal.size());
+			double rougePrecision = (overlap) / (sysSummaryTokens.size());
+			r.recall = r.recall + rougeRecall;
+			r.precision = r.precision + rougePrecision;
+		}
 	}
 
 	private void computeROUGEL(Result r, List<String> refSents, List<String> sysSents) {
-		double total_lcs = 0;
+		
 		Set<String> unionLCSWords = new HashSet<>();
 		Set<String> allRefWords = new HashSet<>();
 		Set<String> allSysWords = new HashSet<>();
+		
 
 		// Get unique sys summary words
 		for (String sys : sysSents) {
@@ -669,10 +614,12 @@ public class ROUGECalculator {
 		for (String ref : refSents) {
 			// get union of words from reference into a hashset
 			for (String sys : sysSents) {
-				// get union of all LCS words into hashset
-				unionLCSWords.addAll(getLCSSequence(ref, sys));
+				
+				unionLCSWords.addAll(getLCSInternal(ref,sys));
+				 
 			}
 		}
+		
 		double rougeRecall = unionLCSWords.size() / (double) allRefWords.size();
 		double rougePrecision = unionLCSWords.size() / (double) allSysWords.size();
 		r.recall = r.recall + rougeRecall;
@@ -730,8 +677,8 @@ public class ROUGECalculator {
 
 		nGrams.addAll(addList);// add tokens without the POS tags
 		nGrams.removeAll(removeList);// remove tokens with the POS tags. At this
-		// point we only want the words and not
-		// the POS tags
+										// point we only want the words and not
+										// the POS tags
 	}
 
 	private HashSet<String> getSynonymList(String sysTok) {
@@ -762,7 +709,7 @@ public class ROUGECalculator {
 
 		for (String s : sents) {
 			b.delete(0, b.length());
-			String[] tokens = s.toLowerCase(Locale.ENGLISH).split("\\s+");
+			String[] tokens = s.toLowerCase().split("\\s+");
 
 			for (String t : tokens) {
 
@@ -771,17 +718,16 @@ public class ROUGECalculator {
 				{
 					// IF NOT STOP WORD KEEP
 					stemmer.setCurrent(daToks[0]);
-				}
-				else
-					stemmer.setCurrent(t);
 
-				if (stemmer.stem()) {
-					b.append(stemmer.getCurrent());
+					if (stemmer.stem()) {
+						b.append(stemmer.getCurrent());
 
-					if (daToks.length == 2) {
-						b.append(daToks[1]);
+						if (daToks.length == 2) {
+							b.append('_');
+							b.append(daToks[1]);
+						}
+						b.append(" ");
 					}
-					b.append(" ");
 				}
 			}
 
@@ -799,7 +745,7 @@ public class ROUGECalculator {
 
 		for (String s : sents) {
 			b.delete(0, b.length());
-			String[] tokens = s.toLowerCase(Locale.ENGLISH).split("\\s+");
+			String[] tokens = s.toLowerCase().split("\\s+");
 
 			for (String t : tokens) {
 
@@ -819,16 +765,16 @@ public class ROUGECalculator {
 	}
 
 	private void printSupportedNgrams() {
-		log.info("The following n-gram settings are supported:");
-		log.info("ROUGE-N  (e.g. 1,2,3,..)");
-		log.info("ROUGE-S  (e.g. S1,S2,S3,..)");
-		log.info("ROUGE-SU (e.g. SU1,SU2,SU3,..);");
-		log.info("ROUGE-L  (only option: LCS)");
+		System.out.println("The following n-gram settings are supported:");
+		System.out.println("ROUGE-N  (e.g. 1,2,3,..)");
+		System.out.println("ROUGE-S  (e.g. S1,S2,S3,..)");
+		System.out.println("ROUGE-SU (e.g. SU1,SU2,SU3,..);");
+		System.out.println("ROUGE-L  (only option: LCS)");
 	}
 
 	/**
 	 * Get list of n-grams
-	 *
+	 * 
 	 * @param sents
 	 * @return
 	 */
@@ -855,22 +801,22 @@ public class ROUGECalculator {
 			}
 
 			else// ROUGE-N
-				if (ngram.matches("SU?[0-9]+")) {
-					generateSkipGrams(ngram, sent, ngramList);
-				}
+			if (ngram.matches("SU?[0-9]+")) {
+				generateSkipGrams(ngram, sent, ngramList);
+			}
 
-				else // ROUGE-L
-					if (ngram.toLowerCase(Locale.ENGLISH).equals("l")) {
-						// just generate unigrams for now
-						generateNgrams(1, sent, ngramList);
-					}
+			else // ROUGE-L
+			if (ngram.toLowerCase().equals("l")) {
+				// just generate unigrams for now
+				generateNgrams(1, sent, ngramList);
+			}
 
-					else {
-						log.error("Please check your N-GRAM settings. NGRAM=" + settings.NGRAM
-								+ " doesn't seem to be supported.");
-						printSupportedNgrams();
-						System.exit(-1);
-					}
+			else {
+				log.error("Please check your N-GRAM settings. NGRAM=" + settings.NGRAM
+						+ " doesn't seem to be supported.");
+				printSupportedNgrams();
+				System.exit(-1);
+			}
 		}
 
 		return ngramList;
@@ -903,7 +849,7 @@ public class ROUGECalculator {
 		}
 
 		// if SU specified then also include unigrams
-		if (gram.toLowerCase(Locale.ENGLISH).contains("su")) {
+		if (gram.toLowerCase().contains("su")) {
 			generateNgrams(1, summary, ngramList);
 		}
 
@@ -927,22 +873,82 @@ public class ROUGECalculator {
 	}
 
 	/**
-	 * Ensures symmetric LCS results
-	 *
-	 * @param s1
-	 * @param s2
+	 * LCS implementation repurposed from: https://www.geeksforgeeks.org/printing-longest-common-subsequence/
+	 * @param X - Word array 1
+	 * @param Y - Word array 2
+	 * @param m - Length of word array 1
+	 * @param n - Length of word array 2
 	 * @return
 	 */
-	public static List<String> getLCSSequence(String s1, String s2) {
-		List<String> l1 = getLCSInternal(s1, s2);
-		List<String> l2 = getLCSInternal(s2, s1);
+	static List<String> lcs(String [] X, String [] Y, int m, int n) 
+	 { 
+	     int[][] L = new int[m+1][n+1]; 
 
-		if (l1.size() > l2.size())
-			return l1;
-		else
-			return l2;
+	     // Following steps build L[m+1][n+1] in bottom up fashion. Note 
+	     // that L[i][j] contains length of LCS of X[0..i-1] and Y[0..j-1]  
+	     for (int i=0; i<=m; i++) 
+	     { 
+	         for (int j=0; j<=n; j++) 
+	         { 
+	             if (i == 0 || j == 0) 
+	                 L[i][j] = 0; 
+	             else if (X[i-1].equalsIgnoreCase(Y[j-1])) 
+	                 L[i][j] = L[i-1][j-1] + 1; 
+	             else
+	                 L[i][j] = Math.max(L[i-1][j], L[i][j-1]); 
+	         } 
+	     } 
 
-	}
+	     // Following code is used to print LCS 
+	     int index = L[m][n]; 
+	     int temp = index; 
+
+	     // Create a character array to store the lcs string 
+	     String[] lcs = new String[index+1]; 
+	     lcs[index] = ""; // Set the terminating character 
+
+	     // Start from the right-most-bottom-most corner and 
+	     // one by one store characters in lcs[] 
+	     int i = m, j = n; 
+	     while (i > 0 && j > 0) 
+	     { 
+	         // If current character in X[] and Y are same, then 
+	         // current character is part of LCS 
+	         if (X[i-1].equalsIgnoreCase(Y[j-1])) 
+	         { 
+	             // Put current character in result 
+	             lcs[index-1] = X[i-1];  
+	               
+	             // reduce values of i, j and index 
+	             i--;  
+	             j--;  
+	             index--;      
+	         } 
+
+	         // If not same, then find the larger of two and 
+	         // go in the direction of larger value 
+	         else if (L[i-1][j] > L[i][j-1]) 
+	             i--; 
+	         else
+	             j--; 
+	     } 
+
+	     ArrayList<String> al=new ArrayList<String>();
+	     // Print the lcs 
+	     
+	     for(int k=0;k<=temp;k++) 
+	    	if (!lcs[k].isEmpty()){
+	        	al.add(lcs[k]);
+	    	}
+	     
+	     return al;
+	 }
+  
+    /* Utility function to get max of 2 integers */
+	public static int max(int a, int b) 
+    { 
+        return (a > b) ? a : b; 
+    } 
 
 	private static List<String> getLCSInternal(String s1, String s2) {
 		List<String> lcsWords = new ArrayList<String>();
@@ -951,21 +957,8 @@ public class ROUGECalculator {
 		String[] s1Toks = s1.split("\\s+");
 		String[] s2Toks = s2.split("\\s+");
 
-		for (int k = 0; k < s1Toks.length; k++) {
-
-			String s1_word = s1Toks[k];
-
-			// find the longest subsequence
-			for (int j = internal_start; j < s2Toks.length; j++) {
-				String s2_word = s2Toks[j];
-				if (s1_word.equals(s2_word)) {
-					lcsWords.add(s1_word);
-					internal_start = j + 1; // force starting position
-				}
-			}
-		}
-
-		return lcsWords;
+		
+		return lcs(s1Toks,s2Toks,s1Toks.length,s2Toks.length);
 	}
 
 }
